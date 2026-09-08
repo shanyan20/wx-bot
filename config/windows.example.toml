@@ -1,0 +1,37 @@
+# 实验性模板，不是某个微信版本的已验证控件配置！不可直接运行。
+# TODO(T01/T02)：必须按 docs/WECHAT_ADAPTER.md 完成字段与身份验证。
+[app]
+database = "../data/windows.sqlite3"
+logs = "../data/logs/windows.log"
+heartbeat = "../data/windows-heartbeat.json"
+pause_file = "../data/PAUSE"
+
+[adapter]
+type = "windows_uia"
+
+[rules]
+private_allowlist = ["friend-test"]
+group_allowlist = []
+group_prefix = "/问 "
+
+[model]
+provider = "echo"
+
+[windows]
+verified = false
+
+[[windows.chats]]
+id = "friend-test"
+chat_type = "private"
+process_id = 0                         # TODO(T01)：本次登录的真实微信进程 PID
+window_title = "TODO_独立聊天窗口精确标题"
+header_id = "TODO_会话头AutomationId"
+header_text = "TODO_经确认唯一的会话头文本"
+list_id = "TODO_消息列表AutomationId"
+input_id = "TODO_输入框AutomationId"
+send_button_id = "TODO_发送按钮AutomationId"
+sender_id = "TODO_消息行内发送者AutomationId"
+body_id = "TODO_消息行内正文AutomationId"
+timestamp_id = "TODO_消息行内带时区ISO时间AutomationId"
+self_sender = "TODO_本账号稳定发送者标识"
+

@@ -1,0 +1,4 @@
+........................................................................ [ 97%]
+..                                                                       [100%]
+- generated xml file: E:\project\bot\data\wechat-tests\20260908T190752480155Z\pytest.xml -
+74 passed in 6.01s

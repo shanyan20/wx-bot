@@ -1,0 +1,32 @@
+# DeepSeek 官方接口；凭证来自 Windows 用户 DPAPI 密文文件或环境变量。
+# 默认仍使用 mock 收发，真实微信接入另见 windows.example.toml。
+[app]
+database = "../data/deepseek.sqlite3"
+logs = "../data/logs/deepseek.log"
+heartbeat = "../data/deepseek-heartbeat.json"
+pause_file = "../data/PAUSE"
+workers = 2
+message_ttl_seconds = 300.0
+send_interval_seconds = 2.0
+
+[adapter]
+type = "mock"
+inbox = "../data/deepseek-inbox.jsonl"
+outbox = "../data/deepseek-outbox.jsonl"
+
+[rules]
+private_allowlist = ["friend-demo"]
+group_allowlist = ["group-demo"]
+group_prefix = "/问 "
+
+[model]
+provider = "http"
+name = "deepseek-v4-flash-vision-exp"
+base_url = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+api_key_file = "../.secrets/deepseek-api-key.dpapi"
+timeout_seconds = 90.0
+max_tokens = 2048
+fallback = "暂时无法生成回复，请稍后再试。"
+system_prompt = "你是简洁、友善的微信聊天助手。支持文本问答与图片理解；未知信息请明确说明。"
+

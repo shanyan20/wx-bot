@@ -1,0 +1,11 @@
+# 创建：conda env create --prefix E:/project/bot/.conda --file environment.yml
+# 激活：conda activate E:/project/bot/.conda
+name: personal-wechat-bot
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -e .[dev,llm]
+

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-wechat-bot"
+version = "0.1.0"
+description = "分层、可恢复的个人微信聊天机器人基础架构"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+llm = ["httpx>=0.28,<0.29"]
+windows = ["pywinauto==0.6.9; sys_platform == 'win32'"]
+dev = ["pytest>=8,<9", "ruff>=0.11,<1", "httpx>=0.28,<0.29"]
+
+[project.scripts]
+wechat-bot = "wechat_bot.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [".conda"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

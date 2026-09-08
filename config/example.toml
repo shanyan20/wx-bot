@@ -1,0 +1,36 @@
+# 所有相对文件路径均相对本配置文件的位置解析。
+[app]
+database = "../data/bot.sqlite3"
+logs = "../data/logs/bot.log"
+heartbeat = "../data/heartbeat.json"
+pause_file = "../data/PAUSE"
+poll_seconds = 1.0
+workers = 2
+message_ttl_seconds = 300.0
+max_attempts = 3
+retry_base_seconds = 2.0
+send_interval_seconds = 2.0
+
+[adapter]
+type = "mock"
+inbox = "../data/inbox.jsonl"
+outbox = "../data/outbox.jsonl"
+
+[rules]
+private_allowlist = ["friend-demo"]
+group_allowlist = ["group-demo"]
+group_prefix = "/问 "
+max_input_chars = 4000
+max_reply_chars = 1500
+context_turns = 6
+
+[model]
+# echo 无网络依赖；http 使用 /chat/completions 协议，需安装 .[llm]。
+provider = "echo"
+name = ""
+base_url = ""
+api_key_env = "BOT_API_KEY"
+timeout_seconds = 30.0
+fallback = "暂时无法生成回复，请稍后再试。"
+system_prompt = "你是简洁、友善的聊天助手。未知信息请明确说明。"
+
