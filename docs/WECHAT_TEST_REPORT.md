@@ -68,7 +68,7 @@ WX-13 至 WX-16 尚未执行：需要指定测试会话、完成控件和稳定�
 
 本地 Git 仓库已初始化并提交全部源码、测试和报告。远端目标为
 `https://github.com/shanyan20/wx-bot.git`。
-命令行推送在 Git Credential Manager 获取凭据时未完成，已停止该推送进程；
-改用已连接的 GitHub 工具创建文件时返回 HTTP 403 `Resource not accessible by integration`。
-因此截至本报告，**尚未成功上传，GitHub Actions 未运行**。
-需要为该仓库提供可写的 GitHub 连接，或在本机完成 Git 凭据登录后执行 `git push -u origin main`。
+连接修复后，已通过 `git push -u origin main` 验证推送成功。
+远端 `main` 已包含源码、测试及报告提交 `4217939a13ab42e0786fd7ad8f6d0e4383fad127`，
+本地 main 已跟踪 origin/main。**代码与测试材料已上传**。
+本报告中的 74 项通过结果仍为本地执行记录；GitHub Actions 运行结果尚未核验。
