@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -35,6 +36,7 @@ def main():
         try:
             result = subprocess.run([sys.executable, *command], cwd=ROOT,
                                     capture_output=True, text=True, encoding="utf-8",
+                                    env={**os.environ, "PYTHONIOENCODING": "utf-8"},
                                     errors="replace",
                                     timeout=60 if name == "readonly_probe" else 180)
             code, output = result.returncode, result.stdout + result.stderr

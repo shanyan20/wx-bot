@@ -140,6 +140,10 @@ class WindowsUIAAdapter:
     async def ack(self, messages: list[Message]) -> None:
         await self._call(self._ack)
 
+    def _write(self, chat, callback):
+        """Control-panel subclass inserts its stop/allowlist barrier here."""
+        return callback()
+
     def _send(self, job: Job) -> SendReceipt:
         if job.message.conversation_id not in self.chats:
             raise NotSentError("unknown conversation")
@@ -151,7 +155,7 @@ class WindowsUIAAdapter:
             # 不覆盖用户草稿。不调用快捷键，避免键盘焦点漂移。
             if edit.get_value():
                 raise ValueError("输入框已有草稿")
-            edit.set_edit_text(job.reply)
+            self._write(chat, lambda: edit.set_edit_text(job.reply))
             window = self._window(chat)  # 输入后再核对目标会话。
             if self._one(window, chat["input_id"]).get_value() != job.reply:
                 raise ValueError("输入文本验证失败")
@@ -161,7 +165,7 @@ class WindowsUIAAdapter:
             raise NotSentError("UIA preflight failed") from None
         try:
             # 从这里开始任何异常都无法确定是否已发送，包括 invoke 本身抛出的异常。
-            button.invoke()
+            self._write(chat, button.invoke)
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
                 for message in self._snapshot(chat):

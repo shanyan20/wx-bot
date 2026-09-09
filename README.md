@@ -149,7 +149,17 @@ system_prompt = "你是简洁、友善的聊天助手。未知信息请明确说
 
 ## 接入真实微信
 
-本轮接入测试：**74 项离线测试通过；微信 4.1.13.12 的真实收发仍待验收**。
+控制面板版本：**91 项本地测试通过；微信 4.1.13.12 的真实收发仍待验收**。
+新增 [真实微信测试控制台](docs/CONTROL_PANEL.md)：联系人/群白名单、只读检查、
+开启/关闭按钮、紧急停止。启动后默认关闭，未校准的绑定不能启用。
+
+```powershell
+& E:\project\bot\.conda\python.exe E:\project\bot\scripts\control.py
+```
+
+`windows_uia` 配置的 CLI `run` 现在也会打开控制台，须在面板中明确选择白名单并开启。
+控制台白名单取代本次运行的 TOML rules 白名单，且仅在关闭时可编辑；mock 的 CLI 保持原行为。
+
 见 [个人微信测试方案与项目矩阵](docs/WECHAT_TEST_PLAN.md) 和
 [本轮测试报告](docs/WECHAT_TEST_REPORT.md)。
 

@@ -17,6 +17,7 @@ dev = ["pytest>=8,<9", "ruff>=0.11,<1", "httpx>=0.28,<0.29"]
 
 [project.scripts]
 wechat-bot = "wechat_bot.cli:main"
+wechat-bot-control = "wechat_bot.panel:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,0 +1,27 @@
+{
+  "started_at": "2026-09-09T07:17:20.354239+00:00",
+  "python": "3.12.14 | packaged by Anaconda, Inc. | (main, Aug 27 2026, 14:37:13) [MSC v.1942 64 bit (AMD64)]",
+  "live_send": "not_executed",
+  "checks": [
+    {
+      "name": "pytest",
+      "exit_code": 0,
+      "seconds": 6.469
+    },
+    {
+      "name": "ruff",
+      "exit_code": 0,
+      "seconds": 0.14
+    },
+    {
+      "name": "dependencies",
+      "exit_code": 0,
+      "seconds": 0.703
+    },
+    {
+      "name": "smoke",
+      "exit_code": 0,
+      "seconds": 2.454
+    }
+  ]
+}

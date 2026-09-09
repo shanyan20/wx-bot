@@ -129,6 +129,11 @@ def main() -> int:
             print("测试消息已写入 mock inbox")
             return 0
         if args.command == "run":
+            if settings.adapter == "windows_uia":
+                from wechat_bot.panel import launch
+
+                launch(settings, Path(__file__).resolve().parents[2] / "data/control")
+                return 0
             setup_logging(settings.logs)
             with InstanceLock(settings.database.with_suffix(".lock")):
                 store = Store(settings.database)
