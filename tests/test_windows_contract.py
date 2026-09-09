@@ -25,7 +25,10 @@ def adapter_and_job(draft="", invoke_error=False):
 
     adapter._window = lambda _: object()
     adapter._one = lambda _, identity: (
-        edit if identity == "input" else SimpleNamespace(invoke=invoke)
+        edit if identity == "input" else SimpleNamespace(
+            invoke=invoke, iface_invoke=object(),
+            element_info=SimpleNamespace(control_type="Button"),
+            is_visible=lambda: True, is_enabled=lambda: True)
     )
     message = Message("windows_uia", "inbound", "friend-demo", "alice", "question", 100)
     reply = replace(message, message_id="outbound", sender_id="self", is_self=True, text="answer")

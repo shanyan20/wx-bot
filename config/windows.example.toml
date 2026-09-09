@@ -34,8 +34,12 @@ header_id = "content_view.top_content_view.title_h_view.left_v_view.left_content
 header_text = "shanyan"
 list_id = "chat_message_list"
 input_id = "chat_input_field"
-# 发送按钮存在但 AutomationId 为空；消息行 ID 重复，原适配器尚不兼容。
-send_button_id = "TODO_发送按钮AutomationId"
+# 发送按钮已只读验证，按容器 + Button + 精确 Name/Class 唯一定位。
+# 空输入时按钮禁用属正常；未测试 Invoke 发送。消息字段仍不满足运行条件。
+send_button_id = ""
+send_button_name = "发送"
+send_button_class = "mmui::XOutlineButton"
+send_scope_id = "chat_message_page"
 sender_id = "TODO_消息行内发送者AutomationId"
 body_id = "TODO_消息行内正文AutomationId"
 timestamp_id = "TODO_消息行内带时区ISO时间AutomationId"

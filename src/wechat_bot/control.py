@@ -92,7 +92,7 @@ class ControlledUIAAdapter(WindowsUIAAdapter):
             # Read interface capabilities, never set text or invoke during preflight.
             if not callable(getattr(edit, "set_edit_text", None)):
                 raise ValueError("输入框不支持 UIA 文本接口")
-            button = self._one(window, chat["send_button_id"])
+            button = self._send_button(window, chat)
             if button.iface_invoke is None:
                 raise ValueError("发送按钮不支持 UIA Invoke")
             counts.append(len(messages))

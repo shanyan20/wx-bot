@@ -17,6 +17,8 @@ FIELDS = {
     "process_id": "微信进程 PID", "header_id": "会话头 AutomationId",
     "header_text": "会话头精确身份文本", "list_id": "消息列表 AutomationId",
     "input_id": "输入框 AutomationId", "send_button_id": "发送按钮 AutomationId",
+    "send_button_name": "无 ID 按钮：精确名称", "send_button_class": "无 ID 按钮：精确类名",
+    "send_scope_id": "无 ID 按钮：容器 AutomationId",
     "sender_id": "消息发送者 AutomationId", "body_id": "消息正文 AutomationId",
     "timestamp_id": "消息时间 AutomationId", "self_sender": "本账号稳定发送者 ID",
 }
@@ -169,15 +171,16 @@ class Panel:
             ttk.Entry(frame, textvariable=variable, width=55).grid(row=row, column=1, pady=4)
             variables[key] = variable
         kind = tk.StringVar(value=chat.get("chat_type", "private"))
-        ttk.Label(frame, text="类型 private / group").grid(row=12, column=0, sticky="w")
+        next_row = len(FIELDS)
+        ttk.Label(frame, text="类型 private / group").grid(row=next_row, column=0, sticky="w")
         ttk.Combobox(frame, textvariable=kind, values=("private", "group"), state="readonly") \
-            .grid(row=12, column=1, sticky="w")
+            .grid(row=next_row, column=1, sticky="w")
         verified = tk.BooleanVar(value=False)  # editing invalidates earlier calibration
         ttk.Checkbutton(frame, text="已人工核验稳定身份、消息 ID、时间与所有控件",
                         variable=verified) \
-            .grid(row=13, column=0, columnspan=2, pady=12)
+            .grid(row=next_row + 1, column=0, columnspan=2, pady=12)
         ttk.Label(frame, text="缺少字段可以先保存待校准；不要用昵称或临时序号冒充稳定 ID。") \
-            .grid(row=14, column=0, columnspan=2)
+            .grid(row=next_row + 2, column=0, columnspan=2)
 
         def save():
             if self.controller.busy:
@@ -200,7 +203,7 @@ class Panel:
             except ValueError as exc:
                 messagebox.showerror("无法保存", str(exc), parent=dialog)
         ttk.Button(frame, text="保存绑定（不会开启 Bot）", command=save) \
-            .grid(row=15, column=0, columnspan=2, pady=12)
+            .grid(row=next_row + 3, column=0, columnspan=2, pady=12)
 
     def import_profile(self):
         if self.controller.busy:

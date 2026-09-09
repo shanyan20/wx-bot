@@ -29,7 +29,7 @@ class WindowsUIAAdapter:
             raise ValueError("windows.chats 不能为空且 id 不可重复")
         required = (
             "id", "window_title", "header_id", "header_text", "list_id", "input_id",
-            "send_button_id", "sender_id", "body_id", "timestamp_id", "self_sender",
+            "sender_id", "body_id", "timestamp_id", "self_sender",
         )
         for chat in self.chats.values():
             if any(not isinstance(chat.get(key), str) or not chat[key] for key in required):
@@ -40,6 +40,7 @@ class WindowsUIAAdapter:
                 raise ValueError("chat_type 必须为 private/group")
             if any(chat[key].startswith("TODO_") for key in required):
                 raise ValueError("TODO(T01)：必须替换所有 UIA 配置占位符")
+            self._validate_send_selector(chat)
         targets = {(c["process_id"], c["window_title"]) for c in self.chats.values()}
         if len(targets) != len(self.chats):
             raise ValueError("不同会话不得绑定同一目标窗口")
@@ -69,10 +70,43 @@ class WindowsUIAAdapter:
 
     @staticmethod
     def _one(root, auto_id: str):
-        matches = root.descendants(auto_id=auto_id)
+        # wrapper.descendants does not accept findwindows' auto_id keyword in pywinauto 0.6.9.
+        matches = [node for node in root.descendants()
+                   if node.element_info.automation_id == auto_id]
         if len(matches) != 1:
             raise ValueError("控件缺失或不唯一")
         return matches[0]
+
+    @staticmethod
+    def _validate_send_selector(chat):
+        identity = chat.get("send_button_id", "")
+        if identity:
+            if not isinstance(identity, str) or identity.startswith("TODO_"):
+                raise ValueError("发送按钮 ID 尚未校准")
+            return
+        for key in ("send_button_name", "send_button_class", "send_scope_id"):
+            value = chat.get(key)
+            if not isinstance(value, str) or not value.strip() or value.startswith("TODO_"):
+                raise ValueError("无 ID 的发送按钮须配置精确名称、类名和容器 ID")
+
+    def _send_button(self, window, chat, *, actionable=False):
+        self._validate_send_selector(chat)
+        if chat.get("send_button_id"):
+            button = self._one(window, chat["send_button_id"])
+        else:
+            scope = self._one(window, chat["send_scope_id"])
+            matches = [node for node in scope.descendants(control_type="Button")
+                       if node.window_text() == chat["send_button_name"]
+                       and node.class_name() == chat["send_button_class"]]
+            # Count all matches, including hidden ones, before checking actionability.
+            if len(matches) != 1:
+                raise ValueError("发送按钮缺失或不唯一")
+            button = matches[0]
+        if button.element_info.control_type != "Button" or button.iface_invoke is None:
+            raise ValueError("发送控件不是支持 Invoke 的按钮")
+        if actionable and (not button.is_visible() or not button.is_enabled()):
+            raise ValueError("发送按钮不可见或未启用")
+        return button
 
     def _window(self, chat: dict):
         # TODO(T04)：进程 PID 暂由配置提供，未实现登录/账号核对和重启后自动发现。
@@ -159,13 +193,20 @@ class WindowsUIAAdapter:
             window = self._window(chat)  # 输入后再核对目标会话。
             if self._one(window, chat["input_id"]).get_value() != job.reply:
                 raise ValueError("输入文本验证失败")
-            button = self._one(window, chat["send_button_id"])
+            self._send_button(window, chat, actionable=True)
         except Exception:
             # 可能留下草稿，但明确没有调用发送按钮；重试遇到草稿会继续拒绝。
             raise NotSentError("UIA preflight failed") from None
         try:
             # 从这里开始任何异常都无法确定是否已发送，包括 invoke 本身抛出的异常。
-            self._write(chat, button.invoke)
+            def invoke_checked():
+                # Re-resolve inside the stop/whitelist barrier; never use a cached button.
+                current = self._window(chat)
+                if self._one(current, chat["input_id"]).get_value() != job.reply:
+                    raise NotSentError("输入内容在发送前发生变化")
+                self._send_button(current, chat, actionable=True).invoke()
+
+            self._write(chat, invoke_checked)
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
                 for message in self._snapshot(chat):

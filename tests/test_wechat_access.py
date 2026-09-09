@@ -21,8 +21,8 @@ class Control:
     def window_text(self):
         return self.text
 
-    def descendants(self, auto_id):
-        return [node for node in self.nodes if node.element_info.automation_id == auto_id]
+    def descendants(self):
+        return self.nodes
 
     def children(self, **kwargs):
         assert kwargs == {"control_type": "ListItem"}
