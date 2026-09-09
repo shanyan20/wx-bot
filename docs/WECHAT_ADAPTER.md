@@ -1,10 +1,14 @@
 # 个人微信接入说明
 
+2026-09-10：授权热激活后，指定窗口已暴露控件树，实际可验证字段已填写；
+消息行唯一标识等条件仍未满足，禁止直接启用。见 [本机实测](NATIVE_ADAPTER_REPORT.md)。
+后续接入路线见 [接入方案调整](ADAPTER_REDESIGN.md)。下文保留为旧实验性实现的契约说明。
+
 ## 当前实际可用范围
 
 `mock` 已实现完整本地收发，用于验证业务核心。
 `windows_uia` 是可配置的实验性实现，并非任何微信 3.x/4.x 的现成兼容驱动。
-没有实机访问、没有读取你的聊天记录、没有向真实好友或群发送测试消息。
+已进行指定独立窗口的实机控件检查，未向真实好友或群发送测试消息。
 
 **微信未必通过 UIA 暴露稳定消息 ID、稳定用户 ID、精确时间和完整消息列表。**
 这些字段不满足时，本实现应保持禁用，不能通过伪造标识或随意放宽校验来绕过。
@@ -86,4 +90,3 @@ SQLite 只能保护已经读到的消息，无法修复微信未暴露的数据�
 参考：[pywinauto 入门](https://pywinauto.readthedocs.io/en/latest/getting_started.html)、
 [UIA 控件 API](https://pywinauto.readthedocs.io/en/latest/code/pywinauto.controls.uiawrapper.html)、
 [桌面与远程运行限制](https://pywinauto.readthedocs.io/en/latest/remote_execution.html)。
-

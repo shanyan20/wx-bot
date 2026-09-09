@@ -23,15 +23,20 @@ verified = false
 [[windows.chats]]
 id = "friend-test"
 chat_type = "private"
-process_id = 0                         # TODO(T01)：本次登录的真实微信进程 PID
-window_title = "TODO_独立聊天窗口精确标题"
-header_id = "TODO_会话头AutomationId"
-header_text = "TODO_经确认唯一的会话头文本"
-list_id = "TODO_消息列表AutomationId"
-input_id = "TODO_输入框AutomationId"
+# 2026-09-10 实测：标题为 shanyan 的顶层窗口属于 PID 13168。
+# PID 仅对本次客户端运行有效；微信重启后须重新核对。
+process_id = 13168
+window_title = "shanyan"
+# 2026-09-10 经用户授权热激活 Qt gate 后，已读取下列标题/列表/输入控件。
+# 标题文本来自实际标题子控件；此结果仅对当前实例做过读取验证。
+# 保持 verified=false；以下 TODO 未解决前无法启用真实收发。
+header_id = "content_view.top_content_view.title_h_view.left_v_view.left_content_v_view.left_ui_.big_title_line_h_view.current_chat_name_label"
+header_text = "shanyan"
+list_id = "chat_message_list"
+input_id = "chat_input_field"
+# 发送按钮存在但 AutomationId 为空；消息行 ID 重复，原适配器尚不兼容。
 send_button_id = "TODO_发送按钮AutomationId"
 sender_id = "TODO_消息行内发送者AutomationId"
 body_id = "TODO_消息行内正文AutomationId"
 timestamp_id = "TODO_消息行内带时区ISO时间AutomationId"
 self_sender = "TODO_本账号稳定发送者标识"
-
