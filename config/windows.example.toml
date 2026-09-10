@@ -23,9 +23,9 @@ verified = false
 [[windows.chats]]
 id = "friend-test"
 chat_type = "private"
-# 2026-09-10 实测：标题为 shanyan 的顶层窗口属于 PID 13168。
+# 2026-09-11 复测：标题为 shanyan 的顶层窗口属于 PID 19452。
 # PID 仅对本次客户端运行有效；微信重启后须重新核对。
-process_id = 13168
+process_id = 19452
 window_title = "shanyan"
 # 2026-09-10 经用户授权热激活 Qt gate 后，已读取下列标题/列表/输入控件。
 # 标题文本来自实际标题子控件；此结果仅对当前实例做过读取验证。

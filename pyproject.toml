@@ -13,7 +13,9 @@ dependencies = []
 [project.optional-dependencies]
 llm = ["httpx>=0.28,<0.29"]
 windows = ["pywinauto==0.6.9; sys_platform == 'win32'"]
-dev = ["pytest>=8,<9", "ruff>=0.11,<1", "httpx>=0.28,<0.29"]
+dev = ["pytest>=8,<9", "ruff>=0.11,<1", "httpx>=0.28,<0.29", "cryptography==50.0.1"]
+db-probe = ["cryptography==50.0.1", "psutil>=7.2,<8",
+            "pywin32>=308; sys_platform == 'win32'", "pywinauto==0.6.9; sys_platform == 'win32'"]
 
 [project.scripts]
 wechat-bot = "wechat_bot.cli:main"
