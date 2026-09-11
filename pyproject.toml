@@ -4,22 +4,27 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "personal-wechat-bot"
-version = "0.1.0"
+version = "0.2.0rc1"
 description = "分层、可恢复的个人微信聊天机器人基础架构"
-readme = "README.md"
+readme = "项目说明.md"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
 llm = ["httpx>=0.28,<0.29"]
 windows = ["pywinauto==0.6.9; sys_platform == 'win32'"]
-dev = ["pytest>=8,<9", "ruff>=0.11,<1", "httpx>=0.28,<0.29", "cryptography==50.0.1"]
+dev = ["pytest>=8,<9", "ruff>=0.11,<1", "httpx>=0.28,<0.29", "cryptography==50.0.1",
+       "pillow>=12,<13", "zstandard>=0.24,<1", "imageio-ffmpeg>=0.6,<1"]
 db-probe = ["cryptography==50.0.1", "psutil>=7.2,<8",
             "pywin32>=308; sys_platform == 'win32'", "pywinauto==0.6.9; sys_platform == 'win32'"]
+acceptance = ["httpx>=0.28,<0.29", "cryptography==50.0.1", "psutil>=7.2,<8",
+              "pillow>=12,<13", "zstandard>=0.24,<1", "imageio-ffmpeg>=0.6,<1",
+              "pywin32>=308; sys_platform == 'win32'", "pywinauto==0.6.9; sys_platform == 'win32'"]
 
 [project.scripts]
 wechat-bot = "wechat_bot.cli:main"
 wechat-bot-control = "wechat_bot.panel:main"
+wechat-bot-acceptance = "wechat_bot.acceptance_panel:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

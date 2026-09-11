@@ -1,7 +1,7 @@
 """将明确传入的本地图片编码为多模态 content block。
 
 不从聊天正文解析本地路径，不自动截图，不访问任意图片 URL。
-TODO(T11)：微信图片下载/保存与受信任媒体目录尚未接到消息流水线；目前为模型/CLI 能力。
+人工验收入口通过 native_media 校验会话媒体并解码后调用本模块；旧内核入口仍需单独接入。
 """
 
 import base64
@@ -38,4 +38,3 @@ def user_content(prompt: str, images: list[Path] | None = None) -> str | list[di
     return [{"type": "text", "text": prompt}, *[
         {"type": "image_url", "image_url": {"url": image_data_url(path)}} for path in images
     ]]
-
