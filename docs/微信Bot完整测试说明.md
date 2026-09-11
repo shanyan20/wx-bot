@@ -1,5 +1,7 @@
 # 微信 Bot 完整测试说明
 
+> 当前版本已按用户验收结果切换为双联系人自动回复，操作以 [双联系人自动回复测试更新](AUTO_REPLY_REPORT.md) 为准。白名单限定“憨憨的小憨憨”“shanyan”，启动后不再逐条确认发送。下文保留此前分阶段人工验收说明，供历史记录对照。
+
 适用版本：0.2.0rc1。适用项目：E:/project/bot。
 本说明覆盖本机 Windows、个人微信、独立测试窗口、文字/图片和 DeepSeek 模型的人工验收。
 本次使用 **scripts/acceptance.py**，不要误用旧 scripts/control.py 或 mock 运行入口。

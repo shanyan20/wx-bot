@@ -66,12 +66,14 @@ class ReviewCase:
 
     def automatic_input(self):
         self.validate_input()
-        self.review_policy = "send_only"
+        if self.review_policy != "automatic":
+            self.review_policy = "send_only"
 
     def automatic_reply(self):
         self.require("b_review")
         self.phase = "b_pass"
-        self.review_policy = "send_only"
+        if self.review_policy != "automatic":
+            self.review_policy = "send_only"
 
     def begin_model(self):
         self.require("a_pass")
@@ -109,6 +111,14 @@ class ReviewCase:
         self.require("c_review")
         self.c_pass, self.phase = True, "complete"
 
+    def automatic_sent(self, evidence):
+        self.require("sending")
+        if self.review_policy != "automatic" or not isinstance(evidence, str) or not (
+                evidence.startswith("native_db_outgoing:") and
+                evidence.splitlines()[0].removeprefix("native_db_outgoing:").strip()):
+            raise ValueError("自动发送缺少原生出站消息证据")
+        self.evidence, self.phase = evidence, "auto_sent"
+
 
 class ReviewStore:
     def __init__(self, path):
@@ -130,7 +140,7 @@ class ReviewStore:
         """Call only while holding the acceptance session lock; never infer a human verdict."""
         interrupted = self.conn.execute(
             "SELECT message_key,phase FROM reviews WHERE phase NOT IN "
-            "('complete','rejected','failed','canceled','uncertain','c_review')").fetchall()
+            "('complete','auto_sent','rejected','failed','canceled','uncertain','c_review')").fetchall()
         for key, phase in interrupted:
             status = "uncertain" if phase == "sending" else "canceled"
             self.conn.execute("UPDATE reviews SET phase=?,evidence=evidence || ? "
@@ -174,7 +184,8 @@ class ReviewStore:
     def history(self, session, turns):
         if type(turns) is not int or turns < 0:
             raise ValueError("历史轮数不得为负数")
-        rows = self.conn.execute("SELECT body,reply FROM reviews WHERE session=? AND c_pass=1 "
+        rows = self.conn.execute("SELECT body,reply FROM reviews WHERE session=? "
+                                 "AND (c_pass=1 OR phase='auto_sent') "
                                  "ORDER BY rowid DESC LIMIT ?", (session, turns)).fetchall()
         history = []
         for raw, reply in reversed(rows):

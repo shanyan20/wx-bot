@@ -1,4 +1,4 @@
-"""Automatic inbound/model/draft pipeline, with explicit human approval for every send."""
+"""Automatic replies to the two locally pinned, authorized private test contacts."""
 
 import argparse
 import asyncio
@@ -17,6 +17,7 @@ from wechat_bot.adapters.native_review import NativeReview
 from wechat_bot.config import load_settings
 from wechat_bot.locking import InstanceLock
 from wechat_bot.services.model import HttpModel
+from wechat_bot.test_allowlist import allowed_candidates
 
 
 class AcceptancePanel:
@@ -31,14 +32,14 @@ class AcceptancePanel:
         self.busy, self.connected, self.closed = False, False, False
         self.epoch = 0
         self.candidates, self.tabs, self.cases = [], {}, {}
-        root.title("微信 Bot · 自动生成草稿 / 人工确认发送")
+        root.title("微信 Bot · 双联系人自动回复")
         root.geometry("1240x860")
         root.minsize(1040, 760)
         self.status = tk.StringVar(value="Bot 已关闭 · 正在检查独立窗口")
         ttk.Label(root, textvariable=self.status, font=("Microsoft YaHei UI", 13)).pack(
             anchor="w", padx=16, pady=12)
         ttk.Label(root, text=f"模型：{self.settings.model_name}　｜　每个会话独立上下文　｜　"
-                  "自动读取、调用模型和填入草稿；仅发送保留人工确认").pack(anchor="w", padx=16)
+                  "自动读取、调用模型、填入并发送；无需逐条确认").pack(anchor="w", padx=16)
         if recovered["uncertain"]:
             ttk.Label(root, text=f"上次有 {recovered['uncertain']} 条发送结果不确定，禁止自动重发。"
                       "请导出记录并在微信中核对。", foreground="#a02020").pack(anchor="w", padx=16)
@@ -62,7 +63,7 @@ class AcceptancePanel:
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill="both", expand=True, padx=12, pady=8)
         ttk.Label(root, text="开始连接以当前消息为基线，不自动处理历史；"
-                  "需要历史样本时点击对应会话的读取按钮。"
+                  "仅限憨憨的小憨憨、shanyan 两位联系人。"
                   "停止后不再调用模型或操作微信；已执行的发送无法撤回。").pack(padx=12, pady=8)
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(100, self.drain)
@@ -119,17 +120,13 @@ class AcceptancePanel:
         self.root.after(100, self.drain)
 
     def show_candidates(self):
+        self.candidates = allowed_candidates(self.project, self.candidates)
         self.windows.configure(state="normal")
         self.windows.delete(0, "end")
-        selection_path = self.project / "data/acceptance/allowlist.json"
-        saved = json.loads(selection_path.read_text(encoding="utf-8")) \
-            if selection_path.exists() else None
         for index, chat in enumerate(self.candidates):
             kind = "群聊" if chat["chat_type"] == "group" else "联系人"
             self.windows.insert("end", f"{kind} · {chat['window_title']} · {chat['id']}")
-            if ((saved is None and chat["window_title"] == "shanyan")
-                    or (saved is not None and [chat["chat_type"], chat["id"]] in saved)):
-                self.windows.selection_set(index)
+            self.windows.selection_set(index)
         self.status.set("Bot 已关闭 · 请选择允许读取和回复的独立窗口")
 
     def refresh(self):
@@ -166,6 +163,8 @@ class AcceptancePanel:
         if self.busy or self.connected or self.backend is None:
             return
         selected = [self.candidates[i] for i in self.windows.curselection()]
+        if selected != allowed_candidates(self.project, selected):
+            raise ValueError("所选窗口不属于已绑定的测试白名单")
         if not selected:
             messagebox.showinfo("白名单", "请至少选择一个独立聊天窗口。")
             return
@@ -185,7 +184,7 @@ class AcceptancePanel:
                 for case in self.store.pending_reviews(self.backend.root.parent.name, chat["id"]):
                     if case.packet.key not in self.cases:
                         self.mount_case(case)
-        self.status.set("已连接白名单 · 自动生成并填入草稿 · 等待人工确认发送")
+        self.status.set("已连接白名单 · 自动读取 → 模型回复 → 输入 → 发送（无需确认）")
 
     def add_tab(self, chat):
         frame = ttk.Frame(self.notebook, padding=10)
@@ -193,12 +192,9 @@ class AcceptancePanel:
         ttk.Label(frame, text=f"原生会话：{chat['id']}　类型：{chat['chat_type']}").pack(anchor="w")
         toolbar = ttk.Frame(frame)
         toolbar.pack(fill="x", pady=8)
-        for label, kind in (("A 最新消息", None), ("A 最近文字", 1), ("A 最近图片", 3)):
-            ttk.Button(toolbar, text=label, command=lambda k=kind:
-                       self.latest(chat["id"], k)).pack(side="left")
         picker = ttk.Combobox(toolbar, state="readonly", width=45)
         picker.pack(side="left", padx=8)
-        status = tk.StringVar(value="等待新消息 · 自动处理至草稿；发送须确认")
+        status = tk.StringVar(value="等待新消息 · 自动回复并验证出站记录")
         ttk.Label(frame, textvariable=status).pack(anchor="w")
         panes = ttk.Panedwindow(frame, orient="horizontal")
         panes.pack(fill="both", expand=True, pady=8)
@@ -214,7 +210,7 @@ class AcceptancePanel:
         image_label.pack(anchor="w")
         actions = ttk.Frame(frame)
         actions.pack(fill="x", pady=8)
-        for label, action in (("确认发送此回复", "send"), ("人工确认发送通过", "approve_c")):
+        for label, action in (("核对旧版待验收发送记录", "approve_c"),):
             ttk.Button(actions, text=label, command=lambda a=action, c=chat["id"]:
                        self.action(c, a)).pack(side="left", padx=3)
         ttk.Button(frame, text="本样本判定不通过 / 停止", command=lambda:
@@ -250,10 +246,13 @@ class AcceptancePanel:
             messagebox.showerror("图片预览", str(exc))
 
     def add_packet(self, packet):
+        if (not self.connected or packet.conversation not in self.backend.targets
+                or packet.chat_type != self.backend.targets[packet.conversation]["chat_type"]):
+            return
         if packet.key in self.cases or self.store.handled(packet.key):
             self.status.set("该消息已有本地验收记录，不重复处理；请发送新的测试消息")
             return
-        case = ReviewCase(packet)
+        case = ReviewCase(packet, review_policy="automatic")
         self.store.save(case)
         self.mount_case(case)
 
@@ -273,8 +272,8 @@ class AcceptancePanel:
         tab = self.tabs[case.packet.conversation]
         if case.packet.key in tab["keys"]:
             tab["picker"].current(tab["keys"].index(case.packet.key))
-        tab["status"].set(f"阶段：{case.phase}　读取/模型/输入：自动处理　"
-                          f"发送人工验收：{'通过' if case.c_pass else '待确认'}")
+        tab["status"].set(f"阶段：{case.phase}　策略：{case.review_policy}　"
+                          "auto_sent 表示原生出站记录已验证")
         timestamp = datetime.fromtimestamp(case.packet.timestamp, UTC).astimezone().isoformat()
         values = [f"发送者：{case.packet.sender}\n时间：{timestamp}\n"
                   f"类型：{case.packet.kind}\n\n{case.packet.text}\n\n{case.packet.note}\n"
@@ -299,9 +298,7 @@ class AcceptancePanel:
             tab["image"].configure(image=photo)
 
     def latest(self, conversation, kind=None):
-        if self.busy or not self.connected or conversation not in self.backend.targets:
-            return
-        self.submit(lambda: self.backend.latest(conversation, kind), self.add_packet)
+        raise ValueError("自动回复模式不处理历史样本；请发送新的测试消息")
 
     def poll(self):
         if self.closed:
@@ -311,7 +308,7 @@ class AcceptancePanel:
         self.root.after(2000, self.poll)
 
     def advance(self):
-        """Only this method chains A/B/draft. It can never call send or approve_c."""
+        """Chain new automatic cases; keep old/uncertain sends blocked for review."""
         if self.closed or self.busy or not self.connected:
             return
         pending = set()
@@ -319,7 +316,7 @@ class AcceptancePanel:
             conversation = case.packet.conversation
             if conversation not in self.backend.targets:
                 continue
-            if case.phase in ("complete", "rejected", "failed", "canceled"):
+            if case.phase in ("complete", "auto_sent", "rejected", "failed", "canceled"):
                 continue
             if conversation in pending:
                 continue
@@ -339,7 +336,11 @@ class AcceptancePanel:
                     self.display(case)
                     self.action(conversation, "draft")
                     return
-                # draft_review / sending / c_review / uncertain blocks only this chat.
+                if case.phase == "draft_review" and case.review_policy == "automatic":
+                    self.display(case)
+                    self.action(conversation, "send")
+                    return
+                # Old reviewed cases and uncertain sends block only their own chat.
             except Exception as exc:
                 case.phase = "failed"
                 case.evidence = f"自动处理失败：{type(exc).__name__}: {exc}"
@@ -395,13 +396,15 @@ class AcceptancePanel:
                             self.drafted(case, result), case)
             elif action == "send":
                 case.require("draft_review")
-                if not messagebox.askyesno("发送到微信", f"将已审阅的回复发送给当前白名单聊天？\n"
+                if case.review_policy != "automatic" and not messagebox.askyesno(
+                                          "发送到微信", f"将已审阅的回复发送给当前白名单聊天？\n"
                                           f"会话：{conversation}\n\n{case.reply}"):
                     return
                 case.begin_send()
                 self.store.save(case)
                 self.submit(lambda: self.backend.send(conversation, case.reply), lambda result:
-                            self.finish(case, "sent", result), case)
+                            self.finish(case, "automatic_sent" if case.review_policy ==
+                                        "automatic" else "sent", result), case)
             self.display(case)
         except Exception as exc:
             messagebox.showerror("本步骤未执行", str(exc))

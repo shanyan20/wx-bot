@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import tkinter as tk
@@ -9,11 +10,14 @@ from wechat_bot.control import SessionGate
 
 
 @pytest.mark.skipif(os.name != "nt" and not os.environ.get("DISPLAY"), reason="No GUI display")
-def test_read_model_draft_chain_automatically_but_send_requires_confirmation(tmp_path, monkeypatch):
+def test_read_model_draft_and_send_automatically_without_confirmation(tmp_path, monkeypatch):
     from wechat_bot import acceptance_panel as module
 
     (tmp_path / "config").mkdir()
     (tmp_path / "config/deepseek.toml").write_text('[model]\nprovider="echo"\n')
+    (tmp_path / "data/acceptance").mkdir(parents=True)
+    (tmp_path / "data/acceptance/test_contacts.json").write_text(json.dumps({
+        "shanyan": "friend", "憨憨的小憨憨": "friend2"}), encoding="utf-8")
     calls, errors = [], []
     packet = Packet("native-1", "account", "friend", "private", "friend", 100, "text", "hello")
 
@@ -23,18 +27,15 @@ def test_read_model_draft_chain_automatically_but_send_requires_confirmation(tmp
             self.targets = {}
 
         def candidates(self):
-            return [{"id": "friend", "chat_type": "private", "window_title": "shanyan"}]
+            return [{"id": "friend", "chat_type": "private", "window_title": "shanyan"},
+                    {"id": "friend2", "chat_type": "private", "window_title": "憨憨的小憨憨"}]
 
         def prepare_connect(self, chats):
             self.targets = {c["id"]: c for c in chats}
-            self.gate = SessionGate({("private", "friend")})
+            self.gate = SessionGate({("private", c["id"]) for c in chats})
 
         def connect(self):
             self.gate.enable()
-
-        def latest(self, conversation, kind):
-            calls.append("read")
-            return packet
 
         def poll(self):
             return []
@@ -59,7 +60,13 @@ def test_read_model_draft_chain_automatically_but_send_requires_confirmation(tmp
 
         async def reply(self, prompt, history, images=None):
             calls.append("model")
-            assert prompt == "hello" and history == [] and images is None
+            assert images is None
+            if prompt in ("hello", "second contact"):
+                assert history == []
+            else:
+                assert prompt == "follow up"
+                assert history == [{"role": "user", "content": "hello"},
+                                   {"role": "assistant", "content": "model reply"}]
             return "model reply"
 
         async def close(self):
@@ -93,28 +100,35 @@ def test_read_model_draft_chain_automatically_but_send_requires_confirmation(tmp
         panel.connect()
         settle()
         assert panel.connected and calls == []
-        panel.latest("friend", 1)
+        panel.add_packet(Packet("outsider", "account", "outsider", "private", "x", 1,
+                                "text", "must not reply"))
+        assert "outsider" not in panel.cases
+        calls.append("read")
+        panel.add_packet(packet)
+        panel.advance()
         settle()
         case = panel.active("friend")
-        assert case.phase == "draft_review" and calls == ["read", "model", "draft"]
+        assert case.phase == "auto_sent" and calls == ["read", "model", "draft", "send"]
         assert confirmations == [] and errors == []
-        assert case.review_policy == "send_only" and not case.a_pass and not case.b_pass
+        assert case.review_policy == "automatic" and not case.a_pass and not case.b_pass
         assert "hello" in panel.tabs["friend"]["texts"][0].get("1.0", "end")
         assert "model reply" in panel.tabs["friend"]["texts"][1].get("1.0", "end")
         panel.advance()
-        assert "send" not in calls
-        panel.action("friend", "send")  # human declines
-        assert case.phase == "draft_review" and "send" not in calls
-        decision[0] = True
-        panel.action("friend", "send")
-        settle()
-        assert case.phase == "c_review" and not case.c_pass
-        panel.action("friend", "approve_c")
-        assert case.phase == "complete" and case.c_pass
+        panel.add_packet(packet)
+        assert calls.count("send") == 1 and not case.c_pass
+        assert panel.store.history(packet.session, 6)[-1]["content"] == "model reply"
         assert calls == ["read", "model", "draft", "send"]
+        for key, contact, message in (("native-2", "friend2", "second contact"),
+                                      ("native-3", "friend", "follow up")):
+            panel.add_packet(Packet(key, "account", contact, "private", contact,
+                                    101, "text", message))
+            panel.advance()
+            settle()
+            assert panel.cases[key].phase == "auto_sent"
+        assert calls.count("send") == 3 and confirmations == [] and errors == []
         panel.stop()
         panel.action("friend", "send")
-        assert calls.count("send") == 1
+        assert calls.count("send") == 3
     finally:
         settle()
         panel.close()

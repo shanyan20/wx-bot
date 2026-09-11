@@ -1,4 +1,4 @@
-"""Launch real WeChat staged human acceptance; never starts sending on launch."""
+"""Launch two-contact automatic replies; stays stopped until the user starts Bot."""
 
 import sys
 from pathlib import Path
