@@ -1,4 +1,4 @@
-"""Native WeChat A/B/C acceptance window. Human verdicts are never inferred."""
+"""Automatic inbound/model/draft pipeline, with explicit human approval for every send."""
 
 import argparse
 import asyncio
@@ -31,14 +31,14 @@ class AcceptancePanel:
         self.busy, self.connected, self.closed = False, False, False
         self.epoch = 0
         self.candidates, self.tabs, self.cases = [], {}, {}
-        root.title("微信 Bot · A/B/C 人工验收")
+        root.title("微信 Bot · 自动生成草稿 / 人工确认发送")
         root.geometry("1240x860")
         root.minsize(1040, 760)
         self.status = tk.StringVar(value="Bot 已关闭 · 正在检查独立窗口")
         ttk.Label(root, textvariable=self.status, font=("Microsoft YaHei UI", 13)).pack(
             anchor="w", padx=16, pady=12)
         ttk.Label(root, text=f"模型：{self.settings.model_name}　｜　每个会话独立上下文　｜　"
-                  "A/B/C 均须人工判定，发送前另行确认").pack(anchor="w", padx=16)
+                  "自动读取、调用模型和填入草稿；仅发送保留人工确认").pack(anchor="w", padx=16)
         if recovered["uncertain"]:
             ttk.Label(root, text=f"上次有 {recovered['uncertain']} 条发送结果不确定，禁止自动重发。"
                       "请导出记录并在微信中核对。", foreground="#a02020").pack(anchor="w", padx=16)
@@ -115,6 +115,7 @@ class AcceptancePanel:
                     self.display(case)
                 self.stop()
                 self.status.set(f"已停止：{type(exc).__name__}：{exc}")
+        self.advance()
         self.root.after(100, self.drain)
 
     def show_candidates(self):
@@ -184,7 +185,7 @@ class AcceptancePanel:
                 for case in self.store.pending_reviews(self.backend.root.parent.name, chat["id"]):
                     if case.packet.key not in self.cases:
                         self.mount_case(case)
-        self.status.set("已连接白名单 · 监听新消息 · 审阅模式（不会自动发送）")
+        self.status.set("已连接白名单 · 自动生成并填入草稿 · 等待人工确认发送")
 
     def add_tab(self, chat):
         frame = ttk.Frame(self.notebook, padding=10)
@@ -197,7 +198,7 @@ class AcceptancePanel:
                        self.latest(chat["id"], k)).pack(side="left")
         picker = ttk.Combobox(toolbar, state="readonly", width=45)
         picker.pack(side="left", padx=8)
-        status = tk.StringVar(value="尚无样本 · A/B/C 均未判定")
+        status = tk.StringVar(value="等待新消息 · 自动处理至草稿；发送须确认")
         ttk.Label(frame, textvariable=status).pack(anchor="w")
         panes = ttk.Panedwindow(frame, orient="horizontal")
         panes.pack(fill="both", expand=True, pady=8)
@@ -213,9 +214,7 @@ class AcceptancePanel:
         image_label.pack(anchor="w")
         actions = ttk.Frame(frame)
         actions.pack(fill="x", pady=8)
-        for label, action in (("A 人工判定通过", "approve_a"), ("B 调用模型", "model"),
-                              ("B 人工判定通过", "approve_b"), ("C1 填入草稿", "draft"),
-                              ("C2 确认发送", "send"), ("C 人工判定通过", "approve_c")):
+        for label, action in (("确认发送此回复", "send"), ("人工确认发送通过", "approve_c")):
             ttk.Button(actions, text=label, command=lambda a=action, c=chat["id"]:
                        self.action(c, a)).pack(side="left", padx=3)
         ttk.Button(frame, text="本样本判定不通过 / 停止", command=lambda:
@@ -274,8 +273,8 @@ class AcceptancePanel:
         tab = self.tabs[case.packet.conversation]
         if case.packet.key in tab["keys"]:
             tab["picker"].current(tab["keys"].index(case.packet.key))
-        tab["status"].set(f"阶段：{case.phase}　A通过：{case.a_pass}　B通过：{case.b_pass}　"
-                          f"C通过：{case.c_pass}")
+        tab["status"].set(f"阶段：{case.phase}　读取/模型/输入：自动处理　"
+                          f"发送人工验收：{'通过' if case.c_pass else '待确认'}")
         timestamp = datetime.fromtimestamp(case.packet.timestamp, UTC).astimezone().isoformat()
         values = [f"发送者：{case.packet.sender}\n时间：{timestamp}\n"
                   f"类型：{case.packet.kind}\n\n{case.packet.text}\n\n{case.packet.note}\n"
@@ -310,6 +309,44 @@ class AcceptancePanel:
         if self.connected and not self.busy:
             self.submit(self.backend.poll, lambda packets: [self.add_packet(p) for p in packets])
         self.root.after(2000, self.poll)
+
+    def advance(self):
+        """Only this method chains A/B/draft. It can never call send or approve_c."""
+        if self.closed or self.busy or not self.connected:
+            return
+        pending = set()
+        for case in self.cases.values():
+            conversation = case.packet.conversation
+            if conversation not in self.backend.targets:
+                continue
+            if case.phase in ("complete", "rejected", "failed", "canceled"):
+                continue
+            if conversation in pending:
+                continue
+            pending.add(conversation)
+            try:
+                if case.phase == "a_review":
+                    case.automatic_input()
+                    self.store.save(case)
+                if case.phase == "a_pass":
+                    self.display(case)
+                    self.action(conversation, "model")
+                    return
+                if case.phase == "b_review":
+                    case.automatic_reply()
+                    self.store.save(case)
+                if case.phase == "b_pass":
+                    self.display(case)
+                    self.action(conversation, "draft")
+                    return
+                # draft_review / sending / c_review / uncertain blocks only this chat.
+            except Exception as exc:
+                case.phase = "failed"
+                case.evidence = f"自动处理失败：{type(exc).__name__}: {exc}"
+                self.store.save(case)
+                self.display(case)
+                self.stop()
+                return
 
     def action(self, conversation, action):
         try:

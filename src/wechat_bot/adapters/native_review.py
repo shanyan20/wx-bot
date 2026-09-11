@@ -11,11 +11,16 @@ from wechat_bot.acceptance import Packet
 from wechat_bot.adapters.native_identity import native_message_key
 from wechat_bot.adapters.native_media import resolve_image
 from wechat_bot.adapters.sqlcipher_snapshot import decode_snapshot
+from wechat_bot.adapters.window_send import click_send_button
 from wechat_bot.adapters.windows_uia import WindowsUIAAdapter
 from wechat_bot.control import SessionGate
 
 HEADER = ("content_view.top_content_view.title_h_view.left_v_view.left_content_v_view."
           "left_ui_.big_title_line_h_view.current_chat_name_label")
+
+
+class SnapshotChangedError(ValueError):
+    """Transient read-only snapshot conflict, never a reason to click Send again."""
 
 
 def text_content(value):
@@ -113,7 +118,7 @@ class NativeReview:
         wal = wal_path.read_bytes() if wal_path.exists() else b""
         if (hashlib.sha256(path.read_bytes()).digest() != hashlib.sha256(data).digest()
                 or (wal_path.read_bytes() if wal_path.exists() else b"") != wal):
-            raise ValueError("微信数据库正在变化，请停止后重新连接")
+            raise SnapshotChangedError("微信数据库正在变化，快照需要重新读取")
         decoded, _ = decode_snapshot(data, wal, bytes.fromhex(secret["key"]),
                                      bytes.fromhex(secret["salt"]))
         conn = sqlite3.connect(":memory:")
@@ -236,29 +241,44 @@ class NativeReview:
         if not isinstance(reply, str) or not reply.strip():
             raise ValueError("拒绝发送空回复")
         chat = self.targets[conversation]
+        self.invalidate_snapshots()
         before = {r["key"] for r in self.read_rows(chat)}
 
         def action():
             window = self.window(chat)
             if self.uia._one(window, chat["input_id"]).get_value() != reply:
                 raise ValueError("草稿改变，拒绝发送")
-            self.uia._send_button(window, chat, actionable=True).invoke()
-        self.gate.action(chat, action)
+            button = self.uia._send_button(window, chat, actionable=True)
+            return click_send_button(window, button, chat["process_id"])
+        dispatch = self.gate.action(chat, action)
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline and not self.stopped:
-            matches = [row for row in self.read_rows(chat)
+            self.invalidate_snapshots()  # do not rely on cached file timestamps for send evidence
+            try:
+                rows = self.read_rows(chat)
+            except SnapshotChangedError:
+                time.sleep(0.5)
+                continue
+            matches = [row for row in rows
                        if row["key"] not in before and row["sender"] == self.self_id
                        and row["kind"] == 1
-                       and text_content(row["content"] or row["compressed"]) == reply]
+                       and text_content(row["content"] or row["compressed"]).replace(
+                           "\r\n", "\n") == reply.replace("\r\n", "\n")]
             if len(matches) > 1:
                 raise ValueError("多条同文出站记录，无法唯一确认本次发送；禁止自动重发")
             if len(matches) == 1:
-                return "native_db_outgoing:" + matches[0]["key"]
+                return ("native_db_outgoing:" + matches[0]["key"]
+                        + "\n发送方式：" + dispatch["method"])
             time.sleep(0.5)
-        raise ValueError("发送已调用但未找到对应出站记录；结果不确定，禁止自动重发")
+        draft_empty = not self.uia._one(self.window(chat), chat["input_id"]).get_value()
+        raise ValueError("已投递一次窗口点击，但未找到对应出站记录；"
+                         f"输入框已清空={draft_empty}。结果不确定，禁止自动重发")
 
-    def close(self):
-        self.stop()
+    def invalidate_snapshots(self):
         for _, conn in self.cache.values():
             conn.close()
         self.cache.clear()
+
+    def close(self):
+        self.stop()
+        self.invalidate_snapshots()

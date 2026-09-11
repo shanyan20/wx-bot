@@ -43,12 +43,13 @@ class ReviewCase:
     a_pass: bool = False
     b_pass: bool = False
     c_pass: bool = False
+    review_policy: str = "manual_all"
 
     def require(self, *phases):
         if self.phase not in phases:
             raise ValueError("当前阶段不允许该操作")
 
-    def approve_a(self):
+    def validate_input(self):
         self.require("a_review")
         if self.packet.kind not in ("text", "image"):
             raise ValueError("消息类型未实现，不能判为读取通过")
@@ -57,7 +58,20 @@ class ReviewCase:
         if self.packet.kind == "text" and not self.packet.text:
             raise ValueError("文字解析为空")
         self.digest = self.packet.fingerprint()
-        self.a_pass, self.phase = True, "a_pass"
+        self.phase = "a_pass"
+
+    def approve_a(self):
+        self.validate_input()
+        self.a_pass = True
+
+    def automatic_input(self):
+        self.validate_input()
+        self.review_policy = "send_only"
+
+    def automatic_reply(self):
+        self.require("b_review")
+        self.phase = "b_pass"
+        self.review_policy = "send_only"
 
     def begin_model(self):
         self.require("a_pass")
@@ -107,6 +121,9 @@ class ReviewStore:
         self.conn.execute("""CREATE TABLE IF NOT EXISTS review_events (
             id INTEGER PRIMARY KEY, message_key TEXT NOT NULL, phase TEXT NOT NULL,
             recorded_at REAL NOT NULL, a_pass INTEGER, b_pass INTEGER, c_pass INTEGER)""")
+        if "review_policy" not in {r[1] for r in self.conn.execute("PRAGMA table_info(reviews)")}:
+            self.conn.execute("ALTER TABLE reviews ADD COLUMN review_policy TEXT "
+                              "NOT NULL DEFAULT 'manual_all'")
         self.conn.commit()
 
     def recover(self):
@@ -126,10 +143,13 @@ class ReviewStore:
             "SELECT count(*) FROM reviews WHERE phase='uncertain'").fetchone()[0]}
 
     def save(self, case):
-        self.conn.execute("INSERT OR REPLACE INTO reviews VALUES(?,?,?,?,?,?,?,?,?)", (
+        self.conn.execute("INSERT OR REPLACE INTO reviews "
+                          "(message_key,session,body,reply,phase,evidence,a_pass,b_pass,c_pass,"
+                          "review_policy) VALUES(?,?,?,?,?,?,?,?,?,?)", (
             case.packet.key, case.packet.session,
             json.dumps(asdict(case.packet), ensure_ascii=False),
-            case.reply, case.phase, case.evidence, case.a_pass, case.b_pass, case.c_pass))
+            case.reply, case.phase, case.evidence, case.a_pass, case.b_pass, case.c_pass,
+            case.review_policy))
         self.conn.execute("INSERT INTO review_events VALUES(NULL,?,?,?,?,?,?)", (
             case.packet.key, case.phase, time.time(), case.a_pass, case.b_pass, case.c_pass))
         self.conn.commit()
@@ -139,7 +159,8 @@ class ReviewStore:
         return self.conn.execute("SELECT 1 FROM reviews WHERE message_key=?", (key,)).fetchone()
 
     def pending_reviews(self, account, conversation):
-        rows = self.conn.execute("SELECT body,reply,phase,evidence,a_pass,b_pass,c_pass "
+        rows = self.conn.execute("SELECT body,reply,phase,evidence,a_pass,b_pass,c_pass,"
+                                 "review_policy "
                                  "FROM reviews WHERE phase IN ('c_review','uncertain')").fetchall()
         cases = []
         for row in rows:
@@ -147,7 +168,7 @@ class ReviewStore:
             if packet.account == account and packet.conversation == conversation:
                 cases.append(ReviewCase(packet, phase=row[2], reply=row[1], evidence=row[3],
                                         a_pass=bool(row[4]), b_pass=bool(row[5]),
-                                        c_pass=bool(row[6])))
+                                        c_pass=bool(row[6]), review_policy=row[7]))
         return cases
 
     def history(self, session, turns):
@@ -165,10 +186,12 @@ class ReviewStore:
 
     def export(self, path):
         """Local report includes actual messages; caller must keep it out of Git."""
-        rows = self.conn.execute("SELECT body,reply,phase,evidence,a_pass,b_pass,c_pass "
+        rows = self.conn.execute("SELECT body,reply,phase,evidence,a_pass,b_pass,c_pass,"
+                                 "review_policy "
                                  "FROM reviews ORDER BY rowid").fetchall()
         data = [{"packet": json.loads(r[0]), "reply": r[1], "phase": r[2], "evidence": r[3],
-                 "a_pass": bool(r[4]), "b_pass": bool(r[5]), "c_pass": bool(r[6])} for r in rows]
+                 "a_pass": bool(r[4]), "b_pass": bool(r[5]), "c_pass": bool(r[6]),
+                 "review_policy": r[7]} for r in rows]
         Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         return len(data)
 

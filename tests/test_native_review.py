@@ -68,3 +68,41 @@ def test_poll_baseline_and_self_messages_do_not_trigger():
     b.read_rows = lambda c: [{"key": "missing-continuity", "sender": "friend"}]
     with pytest.raises(ValueError, match="连续性"):
         b.poll()
+
+
+def test_send_uses_one_targeted_click_and_refreshes_transient_snapshot(monkeypatch):
+    from wechat_bot.adapters import native_review as module
+    b = backend()
+    b.cache, b.self_id = {}, "me"
+    b.targets["allowed"]["process_id"] = 123
+    calls = []
+    b.uia = SimpleNamespace(
+        _one=lambda *args: SimpleNamespace(get_value=lambda: "reply\r\nline"),
+        _send_button=lambda *args, **kwargs: SimpleNamespace(
+            invoke=lambda: pytest.fail("old Invoke route must not run")))
+    snapshots = iter([[], module.SnapshotChangedError("concurrent write"), [
+        {"key": "new", "sender": "me", "kind": 1,
+         "content": "reply\nline", "compressed": None}]])
+    def read(chat):
+        value = next(snapshots)
+        if isinstance(value, Exception):
+            raise value
+        return value
+    b.read_rows = read
+    monkeypatch.setattr(module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(module, "click_send_button", lambda *args:
+                        (calls.append(args) or {"method": "hwnd_mouse_pair"}))
+    result = b.send("allowed", "reply\r\nline")
+    assert "native_db_outgoing:new" in result
+    assert len(calls) == 1 and calls[0][2] == 123
+
+
+def test_changed_draft_blocks_new_mouse_route(monkeypatch):
+    from wechat_bot.adapters import native_review as module
+    b = backend()
+    b.cache = {}
+    b.read_rows = lambda c: []
+    b.uia = SimpleNamespace(_one=lambda *args: SimpleNamespace(get_value=lambda: "human draft"))
+    monkeypatch.setattr(module, "click_send_button", lambda *args: pytest.fail("must not click"))
+    with pytest.raises(ValueError, match="草稿改变"):
+        b.send("allowed", "reply")

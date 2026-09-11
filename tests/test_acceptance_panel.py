@@ -9,7 +9,7 @@ from wechat_bot.control import SessionGate
 
 
 @pytest.mark.skipif(os.name != "nt" and not os.environ.get("DISPLAY"), reason="No GUI display")
-def test_real_widgets_require_separate_reviews_before_each_effect(tmp_path, monkeypatch):
+def test_read_model_draft_chain_automatically_but_send_requires_confirmation(tmp_path, monkeypatch):
     from wechat_bot import acceptance_panel as module
 
     (tmp_path / "config").mkdir()
@@ -67,7 +67,12 @@ def test_real_widgets_require_separate_reviews_before_each_effect(tmp_path, monk
 
     monkeypatch.setattr(module, "NativeReview", Backend)
     monkeypatch.setattr(module, "HttpModel", Model)
-    monkeypatch.setattr(module.messagebox, "askyesno", lambda *a, **k: True)
+    confirmations = []
+    decision = [False]
+    def confirm(*args, **kwargs):
+        confirmations.append(args)
+        return decision[0]
+    monkeypatch.setattr(module.messagebox, "askyesno", confirm)
     monkeypatch.setattr(module.messagebox, "showerror", lambda *a, **k: errors.append(a))
     monkeypatch.setattr(module.AcceptancePanel, "initialize",
                         lambda self: (Backend(self.project), Backend(self.project).candidates()))
@@ -91,20 +96,16 @@ def test_real_widgets_require_separate_reviews_before_each_effect(tmp_path, monk
         panel.latest("friend", 1)
         settle()
         case = panel.active("friend")
-        assert case.phase == "a_review" and calls == ["read"]
+        assert case.phase == "draft_review" and calls == ["read", "model", "draft"]
+        assert confirmations == [] and errors == []
+        assert case.review_policy == "send_only" and not case.a_pass and not case.b_pass
         assert "hello" in panel.tabs["friend"]["texts"][0].get("1.0", "end")
-        panel.action("friend", "model")  # denied before A verdict
-        assert calls == ["read"] and len(errors) == 1
-        panel.action("friend", "approve_a")
-        assert calls == ["read"]
-        panel.action("friend", "model")
-        settle()
-        assert case.phase == "b_review" and calls == ["read", "model"]
         assert "model reply" in panel.tabs["friend"]["texts"][1].get("1.0", "end")
-        panel.action("friend", "approve_b")
-        panel.action("friend", "draft")
-        settle()
+        panel.advance()
+        assert "send" not in calls
+        panel.action("friend", "send")  # human declines
         assert case.phase == "draft_review" and "send" not in calls
+        decision[0] = True
         panel.action("friend", "send")
         settle()
         assert case.phase == "c_review" and not case.c_pass
@@ -117,3 +118,30 @@ def test_real_widgets_require_separate_reviews_before_each_effect(tmp_path, monk
     finally:
         settle()
         panel.close()
+
+
+def test_pending_draft_blocks_only_its_chat_and_never_auto_sends():
+    from types import SimpleNamespace
+
+    from wechat_bot.acceptance import ReviewCase
+    from wechat_bot.acceptance_panel import AcceptancePanel
+    first = ReviewCase(Packet("1", "a", "friend", "private", "f", 1, "text", "first"),
+                       phase="draft_review")
+    second = ReviewCase(Packet("2", "a", "friend", "private", "f", 2, "text", "second"))
+    other = ReviewCase(Packet("3", "a", "other", "private", "o", 3, "text", "other"))
+    panel = AcceptancePanel.__new__(AcceptancePanel)
+    panel.closed = panel.busy = False
+    panel.connected = True
+    panel.cases = {c.packet.key: c for c in (first, second, other)}
+    panel.backend = SimpleNamespace(targets={"friend": {}, "other": {}})
+    panel.store = SimpleNamespace(save=lambda c: None)
+    panel.display = lambda c: None
+    calls = []
+    panel.action = lambda *args: calls.append(args)
+    panel.advance()
+    assert calls == [("other", "model")]
+    assert second.phase == "a_review"
+    first.phase = "complete"
+    panel.advance()
+    assert calls[-1] == ("friend", "model")
+    assert all(action == "model" for _, action in calls)
