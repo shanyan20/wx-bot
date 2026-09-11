@@ -70,6 +70,31 @@ def test_poll_baseline_and_self_messages_do_not_trigger():
         b.poll()
 
 
+def test_second_chat_snapshot_conflict_does_not_consume_first_chat_messages():
+    from wechat_bot.adapters.native_review import SnapshotChangedError
+
+    b = backend()
+    b.targets["second"] = {"id": "second", "chat_type": "private"}
+    b.cursors = {key: {"old-" + key} for key in b.targets}
+    b.self_id = "me"
+    conflict = [True]
+
+    def read(chat):
+        if chat["id"] == "second" and conflict[0]:
+            raise SnapshotChangedError("concurrent write")
+        return [{"key": prefix + chat["id"], "sender": "friend"}
+                for prefix in ("old-", "new-")]
+
+    b.read_rows = read
+    b.packet = lambda c, r: r["key"]
+    with pytest.raises(SnapshotChangedError):
+        b.poll()
+    assert b.cursors == {key: {"old-" + key} for key in b.targets}
+    conflict[0] = False
+    assert b.poll() == ["new-allowed", "new-second"]
+    assert b.poll() == []
+
+
 def test_send_uses_one_targeted_click_and_refreshes_transient_snapshot(monkeypatch):
     from wechat_bot.adapters import native_review as module
     b = backend()

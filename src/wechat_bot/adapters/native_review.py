@@ -194,6 +194,7 @@ class NativeReview:
 
     def poll(self):
         packets = []
+        next_cursors = {}
         for chat in self.targets.values():
             rows = self.read_rows(chat)
             previous = self.cursors[chat["id"]]
@@ -203,7 +204,10 @@ class NativeReview:
             for row in rows:
                 if row["key"] not in previous and row["sender"] != self.self_id:
                     packets.append(self.packet(chat, row))
-            self.cursors[chat["id"]] = previous | current
+            next_cursors[chat["id"]] = previous | current
+        # Commit only when every target has been read. A later snapshot conflict
+        # must not consume earlier contacts' packets before the caller receives them.
+        self.cursors.update(next_cursors)
         return packets
 
     def latest(self, conversation, kind=None):

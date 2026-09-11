@@ -13,7 +13,7 @@ from tkinter import messagebox, ttk
 from PIL import Image, ImageTk
 
 from wechat_bot.acceptance import ReviewCase, ReviewStore
-from wechat_bot.adapters.native_review import NativeReview
+from wechat_bot.adapters.native_review import NativeReview, SnapshotChangedError
 from wechat_bot.config import load_settings
 from wechat_bot.locking import InstanceLock
 from wechat_bot.services.model import HttpModel
@@ -27,9 +27,11 @@ class AcceptancePanel:
         self.store = ReviewStore(self.project / "data/acceptance/reviews.sqlite3")
         recovered = self.store.recover()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wechat-review")
+        self.model_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wechat-model")
+        self.model_jobs = set()
         self.events = queue.Queue()
         self.backend = None
-        self.busy, self.connected, self.closed = False, False, False
+        self.native_busy, self.connected, self.closed = False, False, False
         self.epoch = 0
         self.candidates, self.tabs, self.cases = [], {}, {}
         root.title("微信 Bot · 双联系人自动回复")
@@ -82,24 +84,35 @@ class AcceptancePanel:
         self.backend, self.candidates = result
         self.show_candidates()
 
-    def submit(self, function, done, case=None):
-        if self.busy or self.closed:
+    @property
+    def busy(self):
+        return self.native_busy or bool(self.model_jobs)
+
+    def submit(self, function, done, case=None, *, model=False):
+        conversation = case.packet.conversation if model else None
+        if self.closed or (conversation in self.model_jobs if model else self.native_busy):
             raise ValueError("请等待当前操作完成")
-        self.busy = True
+        if model:
+            self.model_jobs.add(conversation)
+        else:
+            self.native_busy = True
         epoch = self.epoch
         def guarded():
             if epoch != self.epoch or self.closed:
                 raise ValueError("操作已被停止")
             return function()
-        future = self.pool.submit(guarded)
-        future.add_done_callback(lambda f: self.events.put((epoch, f, done, case)))
+        future = (self.model_pool if model else self.pool).submit(guarded)
+        future.add_done_callback(lambda f: self.events.put((epoch, f, done, case, conversation)))
 
     def drain(self):
         if self.closed:
             return
         while not self.events.empty():
-            epoch, future, done, case = self.events.get()
-            self.busy = False
+            epoch, future, done, case, conversation = self.events.get()
+            if conversation is None:
+                self.native_busy = False
+            else:
+                self.model_jobs.discard(conversation)
             try:
                 result = future.result()
                 if epoch == self.epoch:
@@ -108,14 +121,21 @@ class AcceptancePanel:
                     case.phase = "uncertain" if case.phase == "sending" else "canceled"
                     self.store.save(case)
             except Exception as exc:
+                if (isinstance(exc, SnapshotChangedError) and case is None
+                        and self.connected and epoch == self.epoch):
+                    self.status.set("微信正在更新消息，下一轮重读；模型任务继续")
+                    continue
                 if case:
                     case.phase = ("uncertain" if case.phase == "sending" else
                                   "canceled" if epoch != self.epoch else "failed")
                     case.evidence = f"{type(exc).__name__}: {exc}"
                     self.store.save(case)
                     self.display(case)
-                self.stop()
-                self.status.set(f"已停止：{type(exc).__name__}：{exc}")
+                if conversation is None:
+                    self.stop()
+                    self.status.set(f"已停止：{type(exc).__name__}：{exc}")
+                else:
+                    self.status.set(f"该消息模型调用失败；其他会话继续：{type(exc).__name__}")
         self.advance()
         self.root.after(100, self.drain)
 
@@ -184,7 +204,7 @@ class AcceptancePanel:
                 for case in self.store.pending_reviews(self.backend.root.parent.name, chat["id"]):
                     if case.packet.key not in self.cases:
                         self.mount_case(case)
-        self.status.set("已连接白名单 · 自动读取 → 模型回复 → 输入 → 发送（无需确认）")
+        self.status.set("已连接白名单 · 双会话模型并行 / 同会话顺序处理 · 自动发送")
 
     def add_tab(self, chat):
         frame = ttk.Frame(self.notebook, padding=10)
@@ -303,13 +323,13 @@ class AcceptancePanel:
     def poll(self):
         if self.closed:
             return
-        if self.connected and not self.busy:
+        if self.connected and not self.native_busy:
             self.submit(self.backend.poll, lambda packets: [self.add_packet(p) for p in packets])
         self.root.after(2000, self.poll)
 
     def advance(self):
         """Chain new automatic cases; keep old/uncertain sends blocked for review."""
-        if self.closed or self.busy or not self.connected:
+        if self.closed or not self.connected:
             return
         pending = set()
         for case in self.cases.values():
@@ -317,6 +337,10 @@ class AcceptancePanel:
             if conversation not in self.backend.targets:
                 continue
             if case.phase in ("complete", "auto_sent", "rejected", "failed", "canceled"):
+                continue
+            # Old native-verified deliveries retain their human verdict without
+            # blocking new messages. An uncertain send still blocks its own chat.
+            if case.phase == "c_review" and case.evidence.startswith("native_db_outgoing:"):
                 continue
             if conversation in pending:
                 continue
@@ -326,20 +350,26 @@ class AcceptancePanel:
                     case.automatic_input()
                     self.store.save(case)
                 if case.phase == "a_pass":
+                    if conversation in self.model_jobs:
+                        continue
                     self.display(case)
                     self.action(conversation, "model")
-                    return
+                    continue
                 if case.phase == "b_review":
                     case.automatic_reply()
                     self.store.save(case)
                 if case.phase == "b_pass":
+                    if self.native_busy:
+                        continue
                     self.display(case)
                     self.action(conversation, "draft")
-                    return
+                    continue
                 if case.phase == "draft_review" and case.review_policy == "automatic":
+                    if self.native_busy:
+                        continue
                     self.display(case)
                     self.action(conversation, "send")
-                    return
+                    continue
                 # Old reviewed cases and uncertain sends block only their own chat.
             except Exception as exc:
                 case.phase = "failed"
@@ -351,7 +381,7 @@ class AcceptancePanel:
 
     def action(self, conversation, action):
         try:
-            if self.busy:
+            if (conversation in self.model_jobs if action == "model" else self.native_busy):
                 raise ValueError("当前操作尚未完成")
             if not action.startswith("approve_") and (
                     not self.connected or conversation not in self.backend.targets):
@@ -388,7 +418,7 @@ class AcceptancePanel:
 
                 self.store.save(case)
                 self.submit(lambda: asyncio.run(request()), lambda result:
-                            self.finish(case, "model_result", result), case)
+                            self.finish(case, "model_result", result), case, model=True)
             elif action == "draft":
                 case.begin_draft()
                 self.store.save(case)
@@ -467,6 +497,7 @@ class AcceptancePanel:
             self.pool.submit(self.backend.close).result(timeout=10)
         self.closed = True
         self.pool.shutdown(wait=False, cancel_futures=True)
+        self.model_pool.shutdown(wait=False, cancel_futures=True)
         self.store.close()
         self.root.destroy()
 

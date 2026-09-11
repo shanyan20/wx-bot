@@ -144,7 +144,8 @@ def test_pending_draft_blocks_only_its_chat_and_never_auto_sends():
     second = ReviewCase(Packet("2", "a", "friend", "private", "f", 2, "text", "second"))
     other = ReviewCase(Packet("3", "a", "other", "private", "o", 3, "text", "other"))
     panel = AcceptancePanel.__new__(AcceptancePanel)
-    panel.closed = panel.busy = False
+    panel.closed = panel.native_busy = False
+    panel.model_jobs = set()
     panel.connected = True
     panel.cases = {c.packet.key: c for c in (first, second, other)}
     panel.backend = SimpleNamespace(targets={"friend": {}, "other": {}})
@@ -157,5 +158,5 @@ def test_pending_draft_blocks_only_its_chat_and_never_auto_sends():
     assert second.phase == "a_review"
     first.phase = "complete"
     panel.advance()
-    assert calls[-1] == ("friend", "model")
+    assert ("friend", "model") in calls
     assert all(action == "model" for _, action in calls)
